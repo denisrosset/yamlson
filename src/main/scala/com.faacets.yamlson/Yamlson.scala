@@ -1,19 +1,24 @@
 package com.faacets.yamlson
 
 import org.yaml.snakeyaml._
+import resolver.Resolver
+import reader.UnicodeReader
+import constructor.SafeConstructor
+import nodes.{Tag, NodeId, ScalarNode}
 import events._
 import java.io.File
 import java.io.{Reader, StringReader, InputStream, BufferedReader, InputStreamReader, FileInputStream}
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
+//import scala.collection.JavaConversions._
 import scala.collection.mutable.Builder
 import play.api.libs.json._
 import resource._
 
-sealed trait Context {
+protected sealed trait Context {
   def parent: Context
 }
 
-case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends Context {
+protected case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends Context {
   def parent = sys.error("Cannot get parent of root context")
   def setDocuments(documents: Seq[JsValue]): Unit = {
     require(documentsOption.isEmpty)
@@ -21,17 +26,17 @@ case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends
   }
 }
 
-case class StreamContext(parent: RootContext, documents: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends Context {
+protected case class StreamContext(parent: RootContext, documents: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends Context {
   def append(value: JsValue) = { documents += value }
   def result(): Seq[JsValue] = documents.result
 }
 
-sealed trait CollectionContext extends Context {
+protected sealed trait CollectionContext extends Context {
   def append(value: JsValue): Unit
   def result(): JsValue
 }
 
-case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
+protected case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
   def append(value: JsValue) = { elements += value }
   def result(): JsValue = {
     val seq = elements.result
@@ -40,12 +45,12 @@ case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq
   }
 }
 
-case class SequenceContext(parent: CollectionContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
+protected case class SequenceContext(parent: CollectionContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
   def append(value: JsValue) = { elements += value }
   def result(): JsValue = JsArray(elements.result)
 }
 
-case class MappingContext(parent: CollectionContext, elements: Builder[(String, JsValue), Seq[(String, JsValue)]] = Vector.newBuilder[(String, JsValue)], var keyRead: Option[String] = None) extends CollectionContext {
+protected case class MappingContext(parent: CollectionContext, elements: Builder[(String, JsValue), Seq[(String, JsValue)]] = Vector.newBuilder[(String, JsValue)], var keyRead: Option[String] = None) extends CollectionContext {
   def append(value: JsValue) = (value, keyRead) match {
     case (JsString(key), None) =>
       keyRead = Some(key)
@@ -61,7 +66,25 @@ case class MappingContext(parent: CollectionContext, elements: Builder[(String, 
  * Helper functions to parse YAML format as JsValues.
  */
 object Yamlson {
-  def process(event: Event, context: Context): Context =
+  val resolver = new Resolver
+  object Constructor extends SafeConstructor {
+    def constructScalarNode(node: ScalarNode): AnyRef = {
+      val constructor = getConstructor(node)
+      constructor.construct(node)
+    }
+  }
+  protected def processScalar(event: ScalarEvent): JsValue = {
+    val tag = resolver.resolve(NodeId.scalar, event.getValue, true)
+    val node = new ScalarNode(tag, true, event.getValue,
+      event.getStartMark, event.getEndMark, event.getStyle)
+    Constructor.constructScalarNode(node) match {
+      case l: java.lang.Long => JsNumber(BigDecimal(l))
+      case i: java.lang.Integer => JsNumber(BigDecimal(i))
+      case bi: java.math.BigInteger => JsNumber(BigDecimal(bi))
+      case other => JsString(event.getValue)
+    }
+  }
+  protected def process(event: Event, context: Context): Context =
     (event, context) match {
       case (_: StreamStartEvent, root: RootContext) => StreamContext(root)
       case (_: StreamEndEvent, stream: StreamContext) =>
@@ -80,14 +103,14 @@ object Yamlson {
         sequence.parent.append(sequence.result)
         sequence.parent
       case (scalar: ScalarEvent, collection: CollectionContext) =>
-        collection.append(JsString(scalar.getValue))
+        collection.append(processScalar(scalar))
         collection
       case _ => sys.error(s"Wrong event $event in context $context")
     }
 
   def parseAll(reader: Reader): Seq[JsValue] = {
     val yaml = new Yaml
-    val RootContext(Some(documents)) = ((RootContext(): Context) /: yaml.parse(reader)) { case (context, event) => process(event, context) }
+    val RootContext(Some(documents)) = ((RootContext(): Context) /: yaml.parse(reader).asScala) { case (context, event) => process(event, context) }
     documents
   }
   def parse(reader: Reader): JsValue = parseAll(reader).head
@@ -115,4 +138,67 @@ object Yamlson {
     result.opt.get
   }
   def parse(file: File): JsValue = parseAll(file).head
+
+
+  protected def convertToPlainJavaTypes(value: JsValue): AnyRef = {
+    value match {
+      case JsNull => null
+      case _: JsUndefined => throw new IllegalArgumentException("Undefined values are not supported.")
+      case JsBoolean(b) => new java.lang.Boolean(b)
+      case JsNumber(n) => n.toBigIntExact.getOrElse(throw new IllegalArgumentException("Floating point numbers are not supported")).bigInteger
+      case JsString(s) => s
+      case JsArray(seq) => seq.map(convertToPlainJavaTypes(_)).asJava
+      case JsObject(fields) => collection.immutable.ListMap(fields.map { case (k, v) => (k, convertToPlainJavaTypes(v)) }: _*).asJava
+    }
+  }
+
+  /**
+   * Convert a JsValue to its YAML string representation.
+   *
+   *
+   * @param json the JsValue to convert
+   * @return a String with the YAML representation
+   */
+  def stringify(json: JsValue): String = {
+    val options = new DumperOptions
+    options.setDefaultScalarStyle(DumperOptions.ScalarStyle.PLAIN)
+    val yaml = new Yaml(options)
+    yaml.dump(convertToPlainJavaTypes(json))
+  }
+
+  /**
+   * Convert a sequence of JsValue to its YAML string representation as several documents.
+   *
+   *
+   * @param json the JsValue to convert
+   * @return a String with the YAML representation
+   */
+  def stringify(json: Seq[JsValue]): String = {
+    val options = new DumperOptions
+    options.setDefaultScalarStyle(DumperOptions.ScalarStyle.PLAIN)
+    val yaml = new Yaml(options)
+    yaml.dumpAll(json.map(convertToPlainJavaTypes(_)).asJava.iterator)
+  }
+
+  //We use unicode \u005C for a backlash in comments, because Scala will replace unicode escapes during lexing
+  //anywhere in the program.
+  /**
+   * Convert a JsValue to its YAML string representation, escaping all non-ascii characters using \u005CuXXXX syntax.
+   *
+   * @param json the JsValue to convert
+   * @return a String with the YAML representation with all non-ascii characters escaped.
+   */
+  def asciiStringify(json: JsValue): String = {
+    val options = new DumperOptions
+    options.setAllowUnicode(false)
+    val yaml = new Yaml(options)
+    yaml.dump(convertToPlainJavaTypes(json))
+  }
+
+  def asciiStringify(json: Seq[JsValue]): String = {
+    val options = new DumperOptions
+    options.setAllowUnicode(false)
+    val yaml = new Yaml(options)
+    yaml.dump(json.map(convertToPlainJavaTypes(_)).asJava.iterator)
+  }
 }
