@@ -164,7 +164,6 @@ object Yamlson {
    */
   def stringify(json: JsValue): String = {
     val options = new DumperOptions
-    options.setDefaultScalarStyle(DumperOptions.ScalarStyle.PLAIN)
     val yaml = new Yaml(options)
     yaml.dump(convertToPlainJavaTypes(json))
   }
@@ -178,7 +177,6 @@ object Yamlson {
    */
   def stringify(json: Seq[JsValue]): String = {
     val options = new DumperOptions
-    options.setDefaultScalarStyle(DumperOptions.ScalarStyle.PLAIN)
     val yaml = new Yaml(options)
     yaml.dumpAll(json.map(convertToPlainJavaTypes(_)).asJava.iterator)
   }
