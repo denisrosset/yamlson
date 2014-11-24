@@ -1,18 +1,21 @@
 package com.faacets.yamlson
 
+import java.io.File
+import java.io.{Reader, StringReader, InputStream, BufferedReader, InputStreamReader, FileInputStream}
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable.Builder
+
+import resource._
+
+import play.api.libs.json._
+
 import org.yaml.snakeyaml._
 import resolver.Resolver
 import reader.UnicodeReader
 import constructor.SafeConstructor
 import nodes.{Tag, NodeId, ScalarNode}
 import events._
-import java.io.File
-import java.io.{Reader, StringReader, InputStream, BufferedReader, InputStreamReader, FileInputStream}
-import scala.collection.JavaConverters._
-//import scala.collection.JavaConversions._
-import scala.collection.mutable.Builder
-import play.api.libs.json._
-import resource._
 
 protected sealed trait Context {
   def parent: Context
