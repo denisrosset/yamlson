@@ -1,14 +1,12 @@
-name := "Yamlson"
+name := "yamlson"
 
 organization := "com.faacets"
 
-version := "0.1.1"
-
 scalaVersion := "2.11.7"
 
-licenses := Seq("MIT License" -> url("http://opensource.org/licenses/mit-license.php"))
+licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
 
-homepage := Some(url("https://github.com/denisrosset/yamlson"))
+homepage := Some(url(s"https://github.com/denisrosset/${name.value}#readme"))
 
 scalacOptions ++= Seq("-unchecked", "-feature", "-deprecation", "-optimize") 
 
@@ -23,6 +21,13 @@ resolvers ++= Seq(
   Resolver.jcenterRepo
 )
 
-publishTo := Some("Bintray API Realm" at s"https://api.bintray.com/content/denisrosset/com.faacets/uamlson/$version")
+publishArtifact in Test := false
 
-credentials += Credentials(new File("credentials.properties"))
+
+// This will break the process into two parts:
+// First, stage all artifacts using publish.
+// Once all artifacts are staged, run bintrayRelease to make the artifacts public
+
+bintrayReleaseOnPublish in ThisBuild := false
+
+bintrayRepository := "com.faacets"
