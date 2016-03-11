@@ -22,100 +22,11 @@ import events._
  */
 object Yamlson {
 
-  protected sealed trait Context {
-    def parent: Context
-  }
-
-  protected case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends Context {
-    def parent = sys.error("Cannot get parent of root context")
-    def setDocuments(documents: Seq[JsValue]): Unit = {
-      require(documentsOption.isEmpty)
-      documentsOption = Some(documents)
-    }
-  }
-
-  protected case class StreamContext(parent: RootContext, documents: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends Context {
-    def append(value: JsValue) = { documents += value }
-    def result(): Seq[JsValue] = documents.result
-  }
-
-  protected sealed trait CollectionContext extends Context {
-    def append(value: JsValue): Unit
-    def result(): JsValue
-  }
-
-  protected case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
-    def append(value: JsValue) = { elements += value }
-    def result(): JsValue = {
-      val seq = elements.result
-      assert(seq.size == 1)
-      seq.head
-    }
-  }
-
-  protected case class SequenceContext(parent: CollectionContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
-    def append(value: JsValue) = { elements += value }
-    def result(): JsValue = JsArray(elements.result)
-  }
-
-  protected case class MappingContext(parent: CollectionContext, elements: Builder[(String, JsValue), Seq[(String, JsValue)]] = Vector.newBuilder[(String, JsValue)], var keyRead: Option[String] = None) extends CollectionContext {
-    def append(value: JsValue) = (value, keyRead) match {
-      case (JsString(key), None) =>
-        keyRead = Some(key)
-      case (value, Some(key)) =>
-        elements += (key -> value)
-        keyRead = None
-      case _ => throw new RuntimeException(s"Invalid key $value")
-    }
-    def result(): JsValue = JsObject(elements.result)
-  }
-
-  val resolver = new Resolver
-  object Constructor extends SafeConstructor {
-    def constructScalarNode(node: ScalarNode): AnyRef = {
-      val constructor = getConstructor(node)
-      constructor.construct(node)
-    }
-  }
-  protected def processScalar(event: ScalarEvent): JsValue = {
-    val tag = resolver.resolve(NodeId.scalar, event.getValue, true)
-    val node = new ScalarNode(tag, true, event.getValue,
-      event.getStartMark, event.getEndMark, event.getStyle)
-    Constructor.constructScalarNode(node) match {
-      case l: java.lang.Long => JsNumber(BigDecimal(l))
-      case i: java.lang.Integer => JsNumber(BigDecimal(i))
-      case bi: java.math.BigInteger => JsNumber(BigDecimal(bi))
-      case other => JsString(event.getValue)
-    }
-  }
-  protected def process(event: Event, context: Context): Context =
-    (event, context) match {
-      case (_: StreamStartEvent, root: RootContext) => StreamContext(root)
-      case (_: StreamEndEvent, stream: StreamContext) =>
-        stream.parent.setDocuments(stream.result)
-        stream.parent
-      case (_: DocumentStartEvent, stream: StreamContext) => DocumentContext(stream)
-      case (_: DocumentEndEvent, document: DocumentContext) =>
-        document.parent.append(document.result)
-        document.parent
-      case (_: MappingStartEvent, collection: CollectionContext) => MappingContext(collection)
-      case (_: MappingEndEvent, mapping: MappingContext) =>
-        mapping.parent.append(mapping.result)
-        mapping.parent
-      case (_: SequenceStartEvent, collection: CollectionContext) => SequenceContext(collection)
-      case (_: SequenceEndEvent, sequence: SequenceContext) =>
-        sequence.parent.append(sequence.result)
-        sequence.parent
-      case (scalar: ScalarEvent, collection: CollectionContext) =>
-        collection.append(processScalar(scalar))
-        collection
-      case _ => sys.error(s"Wrong event $event in context $context")
-    }
-
   def parseAll(reader: Reader): Seq[JsValue] = {
     val yaml = new Yaml
-    val RootContext(Some(documents)) = ((RootContext(): Context) /: yaml.parse(reader).asScala) { case (context, event) => process(event, context) }
-    documents
+    val machine = new StateMachine
+    yaml.parse(reader).asScala.foreach( e => machine.event(e) )
+    machine.result()
   }
   def parse(reader: Reader): JsValue = parseAll(reader).head
 

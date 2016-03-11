@@ -1,38 +1,9 @@
-package com.faacets.yalmson
+package com.faacets.yamlson
 
 import play.api.libs.json._
 
 import org.yaml.snakeyaml._
 import events._
-
-object ScalarProcessor {
-
-  import constructor.SafeConstructor
-  import nodes.{Tag, NodeId, ScalarNode}
-  import resolver.Resolver
-
-  private[this] val res = new Resolver
-
-  private[this] object Constructor extends SafeConstructor {
-    def constructScalarNode(node: ScalarNode): AnyRef = {
-      val constructor = getConstructor(node)
-      constructor.construct(node)
-    }
-  }
-
-  def process(event: ScalarEvent): JsValue = {
-    val tag = res.resolve(NodeId.scalar, event.getValue, true)
-    val node = new ScalarNode(tag, true, event.getValue,
-      event.getStartMark, event.getEndMark, event.getStyle)
-    Constructor.constructScalarNode(node) match {
-      case l: java.lang.Long => JsNumber(BigDecimal(l))
-      case i: java.lang.Integer => JsNumber(BigDecimal(i))
-      case bi: java.math.BigInteger => JsNumber(BigDecimal(bi))
-      case other => JsString(event.getValue)
-    }
-  }
-
-}
 
 class StateMachine {
 
@@ -59,19 +30,26 @@ class StateMachine {
         sequence.parent.append(sequence.result)
         sequence.parent
       case (scalar: ScalarEvent, collection: CollectionContext) =>
-        collection.append(ScalarProcessor.process(scalar))
+        collection.append(ScalarProcessor(scalar))
         collection
       case _ => sys.error(s"Wrong event $event in context $context")
     }
     context = newContext
   }
 
+  def result(): Seq[JsValue] = context match {
+    case (rc: RootContext) => rc.result()
+    case _ => sys.error(s"Trying the end the parse in the wrong context $context")
+  }
+
 }
 
 object StateMachine {
 
+  /** Default builder type. */
   type SeqBuilder[A] = scala.collection.mutable.Builder[A, Seq[A]]
 
+  /** Default builder returing `Vector`. */
   object SeqBuilder {
 
     def apply[A]: SeqBuilder[A] = Vector.newBuilder[A]
@@ -95,6 +73,11 @@ object StateMachine {
     def setDocuments(documents: Seq[JsValue]): Unit = {
       require(documentsOption.isEmpty)
       documentsOption = Some(documents)
+    }
+
+    def result(): Seq[JsValue] = documentsOption match {
+      case Some(documents) => documents
+      case None => throw new RuntimeException("Documents not set.")
     }
 
   }
