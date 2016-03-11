@@ -11,6 +11,7 @@ homepage := Some(url(s"https://github.com/denisrosset/${name.value}#readme"))
 scalacOptions ++= Seq("-unchecked", "-feature", "-deprecation", "-optimize") 
 
 libraryDependencies ++= Seq(
+  "org.scalatest" %% "scalatest" % "3.0.0-M7" % "test",
   "com.typesafe.play" %% "play-json" % "2.3.10",
   "org.yaml" % "snakeyaml" % "1.16",
   "com.jsuereth" %% "scala-arm" % "1.4"
