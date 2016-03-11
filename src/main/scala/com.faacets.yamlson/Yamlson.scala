@@ -17,58 +17,59 @@ import constructor.SafeConstructor
 import nodes.{Tag, NodeId, ScalarNode}
 import events._
 
-protected sealed trait Context {
-  def parent: Context
-}
-
-protected case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends Context {
-  def parent = sys.error("Cannot get parent of root context")
-  def setDocuments(documents: Seq[JsValue]): Unit = {
-    require(documentsOption.isEmpty)
-    documentsOption = Some(documents)
-  }
-}
-
-protected case class StreamContext(parent: RootContext, documents: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends Context {
-  def append(value: JsValue) = { documents += value }
-  def result(): Seq[JsValue] = documents.result
-}
-
-protected sealed trait CollectionContext extends Context {
-  def append(value: JsValue): Unit
-  def result(): JsValue
-}
-
-protected case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
-  def append(value: JsValue) = { elements += value }
-  def result(): JsValue = {
-    val seq = elements.result
-    assert(seq.size == 1)
-    seq.head
-  }
-}
-
-protected case class SequenceContext(parent: CollectionContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
-  def append(value: JsValue) = { elements += value }
-  def result(): JsValue = JsArray(elements.result)
-}
-
-protected case class MappingContext(parent: CollectionContext, elements: Builder[(String, JsValue), Seq[(String, JsValue)]] = Vector.newBuilder[(String, JsValue)], var keyRead: Option[String] = None) extends CollectionContext {
-  def append(value: JsValue) = (value, keyRead) match {
-    case (JsString(key), None) =>
-      keyRead = Some(key)
-    case (value, Some(key)) =>
-      elements += (key -> value)
-      keyRead = None
-    case _ => throw new RuntimeException(s"Invalid key $value")
-  }
-  def result(): JsValue = JsObject(elements.result)
-}
-
 /**
  * Helper functions to parse YAML format as JsValues.
  */
 object Yamlson {
+
+  protected sealed trait Context {
+    def parent: Context
+  }
+
+  protected case class RootContext(var documentsOption: Option[Seq[JsValue]] = None) extends Context {
+    def parent = sys.error("Cannot get parent of root context")
+    def setDocuments(documents: Seq[JsValue]): Unit = {
+      require(documentsOption.isEmpty)
+      documentsOption = Some(documents)
+    }
+  }
+
+  protected case class StreamContext(parent: RootContext, documents: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends Context {
+    def append(value: JsValue) = { documents += value }
+    def result(): Seq[JsValue] = documents.result
+  }
+
+  protected sealed trait CollectionContext extends Context {
+    def append(value: JsValue): Unit
+    def result(): JsValue
+  }
+
+  protected case class DocumentContext(parent: StreamContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
+    def append(value: JsValue) = { elements += value }
+    def result(): JsValue = {
+      val seq = elements.result
+      assert(seq.size == 1)
+      seq.head
+    }
+  }
+
+  protected case class SequenceContext(parent: CollectionContext, elements: Builder[JsValue, Seq[JsValue]] = Vector.newBuilder[JsValue]) extends CollectionContext {
+    def append(value: JsValue) = { elements += value }
+    def result(): JsValue = JsArray(elements.result)
+  }
+
+  protected case class MappingContext(parent: CollectionContext, elements: Builder[(String, JsValue), Seq[(String, JsValue)]] = Vector.newBuilder[(String, JsValue)], var keyRead: Option[String] = None) extends CollectionContext {
+    def append(value: JsValue) = (value, keyRead) match {
+      case (JsString(key), None) =>
+        keyRead = Some(key)
+      case (value, Some(key)) =>
+        elements += (key -> value)
+        keyRead = None
+      case _ => throw new RuntimeException(s"Invalid key $value")
+    }
+    def result(): JsValue = JsObject(elements.result)
+  }
+
   val resolver = new Resolver
   object Constructor extends SafeConstructor {
     def constructScalarNode(node: ScalarNode): AnyRef = {
