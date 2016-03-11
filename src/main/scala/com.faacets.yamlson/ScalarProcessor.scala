@@ -25,11 +25,12 @@ object ScalarProcessor {
     val node = new ScalarNode(tag, true, event.getValue,
       event.getStartMark, event.getEndMark, event.getStyle)
     Constructor.constructScalarNode(node) match {
+      case b: java.lang.Boolean => jBool(b:Boolean)
       case l: java.lang.Long => jNumber(l:Long)
       case i: java.lang.Integer => jNumber(i:Int)
       case bi: java.math.BigInteger => jNumber(BigDecimal(bi))
       case other => jString(event.getValue)
-        // TODO: add support for Booleans
+        // TODO: support decimal/floating-point types
     }
   }
 

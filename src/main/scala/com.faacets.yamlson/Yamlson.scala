@@ -60,7 +60,7 @@ object Yamlson {
     value.fold(
       jsonNull = null,
       jsonBool = new java.lang.Boolean(_),
-      jsonNumber = _.toBigInt.getOrElse(throw new IllegalArgumentException("Floating point numbers are not supported")).bigInteger,
+      jsonNumber = _.toBigInt.getOrElse(throw new IllegalArgumentException("Floating point numbers are not supported")).bigInteger, // TODO: support floating-point types
       jsonString = identity,
       jsonArray = _.map(convertToPlainJavaTypes).asJava,
       jsonObject = jsonObjectToListMap(_).mapValues(convertToPlainJavaTypes).asJava
