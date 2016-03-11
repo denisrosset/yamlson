@@ -1,12 +1,12 @@
 package com.faacets.yamlson
 
-import play.api.libs.json._
+import argonaut._, Argonaut._
 
 class ParseTests extends YamlsonSuite {
 
   test("Positive max-int") {
     val yaml = "num: 2147483647"
-    Yamlson.parse(yaml) shouldBe JsObject(Seq("num" -> JsNumber(BigDecimal("2147483647"))))
+    Yamlson.parse(yaml) shouldBe jObjectFields(List("num" -> jNumber(BigDecimal("2147483647"))):_*)
   }
 
   test("Object with numbers") {
@@ -20,15 +20,15 @@ content:
   - "Foo Bar"
   - "Max Power"
 """
-    Yamlson.parse(yaml) shouldBe JsObject(Seq(
-      "content" -> JsObject(Seq(
-        "uri" -> JsString("http://javaone.com/keynote.mpg"),
-        "title" -> JsString("Javaone Keynote"),
-        "width" -> JsNumber(640),
-        "height" -> JsNumber(480),
-        "persons" -> JsArray(Seq(JsString("Foo Bar"), JsString("Max Power")))
-      ))
-    ))
+    Yamlson.parse(yaml) shouldBe jObjectFields(List(
+      "content" -> jObjectFields(List(
+        "uri" -> jString("http://javaone.com/keynote.mpg"),
+        "title" -> jString("Javaone Keynote"),
+        "width" -> jNumber(640),
+        "height" -> jNumber(480),
+        "persons" -> jArray(List(jString("Foo Bar"), jString("Max Power")))
+      ):_*)
+    ):_*)
   }
 
 }

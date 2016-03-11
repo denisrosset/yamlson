@@ -1,6 +1,6 @@
 package com.faacets.yamlson
 
-import play.api.libs.json._
+import argonaut._, Argonaut._
 
 import org.yaml.snakeyaml._
 import events._
@@ -20,15 +20,16 @@ object ScalarProcessor {
     }
   }
 
-  def apply(event: ScalarEvent): JsValue = {
+  def apply(event: ScalarEvent): Json = {
     val tag = res.resolve(NodeId.scalar, event.getValue, true)
     val node = new ScalarNode(tag, true, event.getValue,
       event.getStartMark, event.getEndMark, event.getStyle)
     Constructor.constructScalarNode(node) match {
-      case l: java.lang.Long => JsNumber(BigDecimal(l))
-      case i: java.lang.Integer => JsNumber(BigDecimal(i))
-      case bi: java.math.BigInteger => JsNumber(BigDecimal(bi))
-      case other => JsString(event.getValue)
+      case l: java.lang.Long => jNumber(l:Long)
+      case i: java.lang.Integer => jNumber(i:Int)
+      case bi: java.math.BigInteger => jNumber(BigDecimal(bi))
+      case other => jString(event.getValue)
+        // TODO: add support for Booleans
     }
   }
 

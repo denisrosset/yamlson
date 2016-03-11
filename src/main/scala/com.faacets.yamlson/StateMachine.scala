@@ -1,6 +1,6 @@
 package com.faacets.yamlson
 
-import play.api.libs.json._
+import argonaut._, Argonaut._
 
 import org.yaml.snakeyaml._
 import events._
@@ -37,7 +37,7 @@ class StateMachine {
     context = newContext
   }
 
-  def result(): Seq[JsValue] = context match {
+  def result(): Seq[Json] = context match {
     case (rc: RootContext) => rc.result()
     case _ => sys.error(s"Trying the end the parse in the wrong context $context")
   }
@@ -47,12 +47,12 @@ class StateMachine {
 object StateMachine {
 
   /** Default builder type. */
-  type SeqBuilder[A] = scala.collection.mutable.Builder[A, Seq[A]]
+  type ListBuilder[A] = scala.collection.mutable.Builder[A, List[A]]
 
   /** Default builder returing `Vector`. */
-  object SeqBuilder {
+  object ListBuilder {
 
-    def apply[A]: SeqBuilder[A] = Vector.newBuilder[A]
+    def apply[A]: ListBuilder[A] = List.newBuilder[A]
 
   }
 
@@ -68,14 +68,14 @@ object StateMachine {
 
   final class RootContext extends Context {
 
-    private[this] var documentsOption: Option[Seq[JsValue]] = None
+    private[this] var documentsOption: Option[Seq[Json]] = None
 
-    def setDocuments(documents: Seq[JsValue]): Unit = {
+    def setDocuments(documents: Seq[Json]): Unit = {
       require(documentsOption.isEmpty)
       documentsOption = Some(documents)
     }
 
-    def result(): Seq[JsValue] = documentsOption match {
+    def result(): Seq[Json] = documentsOption match {
       case Some(documents) => documents
       case None => throw new RuntimeException("Documents not set.")
     }
@@ -84,11 +84,11 @@ object StateMachine {
 
   final class StreamContext(val parent: RootContext) extends ChildContext {
 
-    val documents: SeqBuilder[JsValue] = SeqBuilder[JsValue]
+    val documents: ListBuilder[Json] = ListBuilder[Json]
 
-    def append(value: JsValue) = { documents += value }
+    def append(value: Json) = { documents += value }
 
-    def result(): Seq[JsValue] = documents.result()
+    def result(): Seq[Json] = documents.result()
 
   }
 
@@ -96,19 +96,19 @@ object StateMachine {
 
     type Element
 
-    val elements: SeqBuilder[Element] = SeqBuilder[Element]
+    val elements: ListBuilder[Element] = ListBuilder[Element]
 
-    def append(value: JsValue): Unit
+    def append(value: Json): Unit
 
-    def result(): JsValue
+    def result(): Json
 
   }
 
   final class DocumentContext(val parent: StreamContext) extends CollectionContext {
 
-    type Element = JsValue
+    type Element = Json
 
-    def append(value: JsValue) = { elements += value }
+    def append(value: Json) = { elements += value }
 
     def result() = {
       val seq = elements.result()
@@ -120,30 +120,30 @@ object StateMachine {
 
   final class SequenceContext(val parent: CollectionContext) extends CollectionContext {
 
-    type Element = JsValue
+    type Element = Json
 
-    def append(value: JsValue) = { elements += value }
+    def append(value: Json) = { elements += value }
 
-    def result() = JsArray(elements.result())
+    def result() = jArray(elements.result())
 
   }
 
   final class MappingContext(val parent: CollectionContext) extends CollectionContext {
 
-    type Element = (String, JsValue)
+    type Element = (String, Json)
     private[this] var keyRead: Option[String] = None
 
-    def append(value: JsValue) = (value, keyRead) match {
-      case (JsString(key), None) => keyRead = Some(key)
-      case (value, Some(key)) =>
-        elements += (key -> value)
+    def append(scalar: Json) = (scalar.string, keyRead)  match {
+      case (Some(newKey), None) => keyRead = Some(newKey)
+      case (_, Some(key)) =>
+        elements += (key -> scalar)
         keyRead = None
-      case _ => throw new RuntimeException(s"Invalid key $value")
+      case _ => throw new RuntimeException(s"Invalid key $scalar")
     }
 
-    def result(): JsValue = {
+    def result(): Json = {
       assert(keyRead.isEmpty)
-      JsObject(elements.result())
+      jObjectFields(elements.result(): _*)
     }
 
   }

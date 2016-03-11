@@ -8,86 +8,85 @@ import scala.collection.mutable.Builder
 
 import resource._
 
-import play.api.libs.json._
+import argonaut._, Argonaut._
 
 import org.yaml.snakeyaml._
-import resolver.Resolver
 import reader.UnicodeReader
-import constructor.SafeConstructor
-import nodes.{Tag, NodeId, ScalarNode}
-import events._
 
 /**
- * Helper functions to parse YAML format as JsValues.
+ * Helper functions to parse YAML format as Jsons.
  */
 object Yamlson {
 
-  def parseAll(reader: Reader): Seq[JsValue] = {
+  def parseAll(reader: Reader): Seq[Json] = {
     val yaml = new Yaml
     val machine = new StateMachine
     yaml.parse(reader).asScala.foreach( e => machine.event(e) )
     machine.result()
   }
-  def parse(reader: Reader): JsValue = parseAll(reader).head
+  def parse(reader: Reader): Json = parseAll(reader).head
 
-  def parseAll(input: String): Seq[JsValue] = parseAll(new StringReader(input))
-  def parse(input: String): JsValue = parseAll(input).head
+  def parseAll(input: String): Seq[Json] = parseAll(new StringReader(input))
+  def parse(input: String): Json = parseAll(input).head
 
-  def parseAll(input: InputStream): Seq[JsValue] = parseAll(new UnicodeReader(input))
-  def parse(input: InputStream): JsValue = parseAll(input).head
+  def parseAll(input: InputStream): Seq[Json] = parseAll(new UnicodeReader(input))
+  def parse(input: InputStream): Json = parseAll(input).head
 
   /**
-   * Parse a byte array representing a json, and return it as a JsValue.
+   * Parse a byte array representing a json, and return it as a Json.
    *
    * The character encoding used will be automatically detected as UTF-8, UTF-16 or UTF-32, as per the heuristics in
    * RFC-4627.
    *
    * @param input a byte array to parse
-   * @return the JsValue representing the byte array
+   * @return the Json representing the byte array
    */
-  def parseAll(input: Array[Byte]): Seq[JsValue] = parseAll(new java.io.ByteArrayInputStream(input))
-  def parse(input: Array[Byte]): JsValue = parseAll(input).head
+  def parseAll(input: Array[Byte]): Seq[Json] = parseAll(new java.io.ByteArrayInputStream(input))
+  def parse(input: Array[Byte]): Json = parseAll(input).head
 
-  def parseAll(file: File): Seq[JsValue] = {
+  def parseAll(file: File): Seq[Json] = {
     val result = managed(new FileInputStream(file)).map(new UnicodeReader(_)).map(new BufferedReader(_)).map(parseAll)
     result.opt.get
   }
-  def parse(file: File): JsValue = parseAll(file).head
+
+  def parse(file: File): Json = parseAll(file).head
+
+  import collection.immutable.ListMap
+  def jsonObjectToListMap(jo: JsonObject): ListMap[String, Json] =
+    ListMap(jo.fields.map( field => (field, jo(field).get) ): _*)
 
 
-  protected def convertToPlainJavaTypes(value: JsValue): AnyRef = {
-    value match {
-      case JsNull => null
-      case _: JsUndefined => throw new IllegalArgumentException("Undefined values are not supported.")
-      case JsBoolean(b) => new java.lang.Boolean(b)
-      case JsNumber(n) => n.toBigIntExact.getOrElse(throw new IllegalArgumentException("Floating point numbers are not supported")).bigInteger
-      case JsString(s) => s
-      case JsArray(seq) => seq.map(convertToPlainJavaTypes(_)).asJava
-      case JsObject(fields) => collection.immutable.ListMap(fields.map { case (k, v) => (k, convertToPlainJavaTypes(v)) }: _*).asJava
-    }
-  }
+  protected def convertToPlainJavaTypes(value: Json): AnyRef =
+    value.fold(
+      jsonNull = null,
+      jsonBool = new java.lang.Boolean(_),
+      jsonNumber = _.toBigInt.getOrElse(throw new IllegalArgumentException("Floating point numbers are not supported")).bigInteger,
+      jsonString = identity,
+      jsonArray = _.map(convertToPlainJavaTypes).asJava,
+      jsonObject = jsonObjectToListMap(_).mapValues(convertToPlainJavaTypes).asJava
+    )
 
   /**
-   * Convert a JsValue to its YAML string representation.
+   * Convert a Json to its YAML string representation.
    *
    *
-   * @param json the JsValue to convert
+   * @param json the Json to convert
    * @return a String with the YAML representation
    */
-  def stringify(json: JsValue): String = {
+  def stringify(json: Json): String = {
     val options = new DumperOptions
     val yaml = new Yaml(options)
     yaml.dump(convertToPlainJavaTypes(json))
   }
 
   /**
-   * Convert a sequence of JsValue to its YAML string representation as several documents.
+   * Convert a sequence of Json to its YAML string representation as several documents.
    *
    *
-   * @param json the JsValue to convert
+   * @param json the Json to convert
    * @return a String with the YAML representation
    */
-  def stringify(json: Seq[JsValue]): String = {
+  def stringify(json: Seq[Json]): String = {
     val options = new DumperOptions
     val yaml = new Yaml(options)
     yaml.dumpAll(json.map(convertToPlainJavaTypes(_)).asJava.iterator)
@@ -96,22 +95,23 @@ object Yamlson {
   //We use unicode \u005C for a backlash in comments, because Scala will replace unicode escapes during lexing
   //anywhere in the program.
   /**
-   * Convert a JsValue to its YAML string representation, escaping all non-ascii characters using \u005CuXXXX syntax.
-   *
-   * @param json the JsValue to convert
-   * @return a String with the YAML representation with all non-ascii characters escaped.
-   */
-  def asciiStringify(json: JsValue): String = {
+    * Convert a Json to its YAML string representation, escaping all non-ascii characters using \u005CuXXXX syntax.
+    *
+    * @param json the Json to convert
+    * @return a String with the YAML representation with all non-ascii characters escaped.
+    */
+  def asciiStringify(json: Json): String = {
     val options = new DumperOptions
     options.setAllowUnicode(false)
     val yaml = new Yaml(options)
     yaml.dump(convertToPlainJavaTypes(json))
   }
 
-  def asciiStringify(json: Seq[JsValue]): String = {
+  def asciiStringify(json: Seq[Json]): String = {
     val options = new DumperOptions
     options.setAllowUnicode(false)
     val yaml = new Yaml(options)
     yaml.dump(json.map(convertToPlainJavaTypes(_)).asJava.iterator)
   }
+
 }
