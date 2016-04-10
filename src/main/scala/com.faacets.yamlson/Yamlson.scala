@@ -1,14 +1,13 @@
 package com.faacets.yamlson
 
 import java.io.File
-import java.io.{Reader, StringReader, InputStream, BufferedReader, InputStreamReader, FileInputStream}
+import java.io.{Reader, StringReader, InputStream, BufferedReader, FileInputStream}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.Builder
 
 import resource._
 
-import argonaut._, Argonaut._
+import argonaut._
 
 import org.yaml.snakeyaml._
 import reader.UnicodeReader

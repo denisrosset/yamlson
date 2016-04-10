@@ -8,7 +8,7 @@ import events._
 object ScalarProcessor {
 
   import constructor.SafeConstructor
-  import nodes.{Tag, NodeId, ScalarNode}
+  import nodes.{NodeId, ScalarNode}
   import resolver.Resolver
 
   private[this] val res = new Resolver

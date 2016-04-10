@@ -108,7 +108,7 @@ object StateMachine {
 
     type Element = Json
 
-    def append(value: Json) = { elements += value }
+    def append(value: Json): Unit = { elements += value }
 
     def result() = {
       val seq = elements.result()
